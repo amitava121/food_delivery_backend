@@ -23,6 +23,14 @@ Open API docs: http://localhost:8000/docs
 
 Copy `.env.example` to `.env` and adjust. By default SQLite is used.
 
+## Tests
+
+```bash
+pytest
+```
+
+Tests live in `tests/` and run against a disposable SQLite file (`test_api.db`), never the configured database.
+
 ## Frontends
 
 - [food_delivery_website](https://github.com/amitava121/food_delivery_website) — customer-facing site. Update `api.js` (`BASE`) with the backend URL.
