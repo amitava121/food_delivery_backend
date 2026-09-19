@@ -1,0 +1,10 @@
+name = "srk-r2-uploader"
+main = "worker.js"
+compatibility_date = "2024-09-25"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "srk-dish-images"
+
+[vars]
+PUBLIC_URL = "https://pub-d199cac58bd748cb9d069aca324616f0.r2.dev"
