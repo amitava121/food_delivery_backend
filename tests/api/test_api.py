@@ -52,6 +52,10 @@ def test_auth_and_order_flow(client, db_session):
     assert order.status_code == 200, order.text
     assert order.json()["total"] == 11.98
 
-    # update status
-    upd = client.patch(f"/orders/{order.json()['id']}/status?status=preparing", headers=headers)
+    # customer cannot advance status to preparing (forbidden)
+    bad_upd = client.patch(f"/orders/{order.json()['id']}/status?status=preparing", headers=headers)
+    assert bad_upd.status_code == 403
+
+    # owner/admin updates status
+    upd = client.patch(f"/orders/{order.json()['id']}/status?status=preparing", headers=owner_headers)
     assert upd.status_code == 200

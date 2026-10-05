@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
-from app.core.deps import get_db, get_current_user
+from app.core.deps import get_db, require_admin
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 @router.get("/dashboard")
-async def dashboard(db: AsyncSession = Depends(get_db), user: models.User = Depends(get_current_user)):
+async def dashboard(db: AsyncSession = Depends(get_db), user: models.User = Depends(require_admin)):
     total_sales = await db.scalar(select(func.sum(models.Order.total)).where(models.Order.payment_status == models.PaymentStatus.paid)) or 0
     total_orders = await db.scalar(select(func.count()).select_from(models.Order))
     popular = (await db.execute(
@@ -19,7 +19,7 @@ async def dashboard(db: AsyncSession = Depends(get_db), user: models.User = Depe
     return {"total_sales": total_sales, "total_orders": total_orders, "popular_items": [{"menu_item_id": p[0], "qty": int(p[1])} for p in popular]}
 
 @router.get("/sales")
-async def sales(db: AsyncSession = Depends(get_db)):
+async def sales(db: AsyncSession = Depends(get_db), user: models.User = Depends(require_admin)):
     rows = (await db.execute(
         select(func.date(models.Order.created_at), func.sum(models.Order.total))
         .group_by(func.date(models.Order.created_at))

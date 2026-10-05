@@ -1,20 +1,35 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
-from app.core.deps import get_db, get_current_user
+from app.core.deps import get_db, require_admin, require_role
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
+staff_only = require_role(models.UserRole.admin, models.UserRole.kitchen)
+
 @router.get("/restaurants/{restaurant_id}")
-async def list_inventory(restaurant_id: int, db: AsyncSession = Depends(get_db)):
+async def list_inventory(
+    restaurant_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: models.User = Depends(staff_only),
+):
     return (await db.scalars(select(models.MenuItem).where(models.MenuItem.restaurant_id == restaurant_id))).all()
 
 @router.post("/restaurants/{restaurant_id}/adjust")
-async def adjust_stock(restaurant_id: int, menu_item_id: int, change: int, reason: str, db: AsyncSession = Depends(get_db), user: models.User = Depends(get_current_user)):
+async def adjust_stock(
+    restaurant_id: int,
+    menu_item_id: int,
+    change: int,
+    reason: str,
+    db: AsyncSession = Depends(get_db),
+    user: models.User = Depends(require_admin),
+):
     item = await db.scalar(select(models.MenuItem).where(models.MenuItem.id == menu_item_id, models.MenuItem.restaurant_id == restaurant_id))
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item.stock + change < 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Stock cannot be adjusted below zero")
     item.stock += change
     db.add(models.InventoryLog(restaurant_id=restaurant_id, menu_item_id=menu_item_id, change=change, reason=reason))
     await db.commit()

@@ -8,14 +8,21 @@ class UserRole(str, enum.Enum):
     customer = "customer"
     kitchen = "kitchen"
     admin = "admin"
+    super_admin = "super_admin"
 
 class OrderStatus(str, enum.Enum):
     pending = "pending"
     confirmed = "confirmed"
     preparing = "preparing"
     ready = "ready"
+    out_for_delivery = "out_for_delivery"
     picked_up = "picked_up"
+    delivered = "delivered"
     cancelled = "cancelled"
+
+class FulfillmentType(str, enum.Enum):
+    pickup = "pickup"
+    delivery = "delivery"
 
 class PaymentStatus(str, enum.Enum):
     pending = "pending"
@@ -88,8 +95,10 @@ class OrderItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("orders.id"))
     menu_item_id = Column(Integer, ForeignKey("menu_items.id"))
+    item_name = Column(String, nullable=True)
     quantity = Column(Integer, default=1)
     unit_price = Column(Float)
+    line_total = Column(Float, default=0.0)
     notes = Column(Text, nullable=True)
     order = relationship("Order", back_populates="items")
 
@@ -98,12 +107,21 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_number = Column(String, unique=True, index=True)
     customer_id = Column(Integer, ForeignKey("users.id"))
+    customer_name = Column(String, nullable=True)
+    customer_phone = Column(String, nullable=True)
     restaurant_id = Column(Integer, ForeignKey("restaurants.id"))
-    location_id = Column(Integer, ForeignKey("qr_locations.id"))
+    location_id = Column(Integer, ForeignKey("qr_locations.id"), nullable=True)
+    fulfillment_type = Column(String, default="pickup")
+    delivery_address = Column(Text, nullable=True)
     status = Column(Enum(OrderStatus), default=OrderStatus.pending)
     payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.pending)
+    subtotal = Column(Float, default=0.0)
+    discount = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
     notes = Column(Text, nullable=True)
+    prep_time_minutes = Column(Integer, default=15)
+    estimated_ready_at = Column(DateTime, nullable=True)
+    idempotency_key = Column(String, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     customer = relationship("User", back_populates="orders")

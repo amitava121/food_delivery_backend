@@ -1,3 +1,4 @@
+import json
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from app.db.base import Base
@@ -6,7 +7,7 @@ from app.core.security import get_password_hash
 from app import models
 
 # One-shot script — uses its own sync engine (runtime backend is fully async).
-SYNC_URL = settings.DATABASE_URL.replace("+asyncpg", "").replace("ssl=require", "sslmode=require")
+SYNC_URL = (settings.DATABASE_URL.replace("+asyncpg", "").replace("+aiosqlite", "").replace("ssl=require", "sslmode=require"))
 engine = create_engine(SYNC_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -15,34 +16,93 @@ def migrate():
     if engine.dialect.name != "sqlite":
         return
     with engine.connect() as conn:
-        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(menu_items)"))}
+        cols_menu = {row[1] for row in conn.execute(text("PRAGMA table_info(menu_items)"))}
         for col, ddl in {
             "is_veg": "ALTER TABLE menu_items ADD COLUMN is_veg BOOLEAN DEFAULT 1",
             "tag": "ALTER TABLE menu_items ADD COLUMN tag VARCHAR",
             "offer_pct": "ALTER TABLE menu_items ADD COLUMN offer_pct INTEGER",
         }.items():
-            if col not in cols:
+            if col not in cols_menu:
                 conn.execute(text(ddl))
+
+        cols_orders = {row[1] for row in conn.execute(text("PRAGMA table_info(orders)"))}
+        for col, ddl in {
+            "customer_name": "ALTER TABLE orders ADD COLUMN customer_name VARCHAR",
+            "customer_phone": "ALTER TABLE orders ADD COLUMN customer_phone VARCHAR",
+            "fulfillment_type": "ALTER TABLE orders ADD COLUMN fulfillment_type VARCHAR DEFAULT 'pickup'",
+            "delivery_address": "ALTER TABLE orders ADD COLUMN delivery_address TEXT",
+            "subtotal": "ALTER TABLE orders ADD COLUMN subtotal FLOAT DEFAULT 0.0",
+            "discount": "ALTER TABLE orders ADD COLUMN discount FLOAT DEFAULT 0.0",
+            "prep_time_minutes": "ALTER TABLE orders ADD COLUMN prep_time_minutes INTEGER DEFAULT 15",
+            "estimated_ready_at": "ALTER TABLE orders ADD COLUMN estimated_ready_at DATETIME",
+            "idempotency_key": "ALTER TABLE orders ADD COLUMN idempotency_key VARCHAR",
+        }.items():
+            if col not in cols_orders:
+                conn.execute(text(ddl))
+
+        cols_items = {row[1] for row in conn.execute(text("PRAGMA table_info(order_items)"))}
+        for col, ddl in {
+            "item_name": "ALTER TABLE order_items ADD COLUMN item_name VARCHAR",
+            "line_total": "ALTER TABLE order_items ADD COLUMN line_total FLOAT DEFAULT 0.0",
+        }.items():
+            if col not in cols_items:
+                conn.execute(text(ddl))
+
         conn.commit()
+
+def ensure_roles_and_accounts(db):
+    """Idempotently ensure super_admin, admin, kitchen, and customer accounts exist."""
+    # 1. Upgrade owner@demo.com to Super Admin if not already
+    owner = db.query(models.User).filter(models.User.email == "owner@demo.com").first()
+    if owner:
+        owner_roles = set(json.loads(owner.roles or '["admin"]'))
+        if "super_admin" not in owner_roles:
+            owner_roles.add("super_admin")
+            owner_roles.add("admin")
+            owner.roles = json.dumps(sorted(owner_roles))
+            db.commit()
+
+    # 2. Ensure normal admin account exists for role testing
+    if not db.query(models.User).filter(models.User.email == "admin@demo.com").first():
+        admin = models.User(
+            email="admin@demo.com",
+            name="Demo Admin",
+            phone="+91-8888888888",
+            roles='["admin"]',
+            hashed_password=get_password_hash("demo123"),
+        )
+        db.add(admin)
+        db.commit()
+
+    # 3. Ensure kitchen/chef account exists for role testing
+    if not db.query(models.User).filter(models.User.email == "chef@demo.com").first():
+        chef = models.User(
+            email="chef@demo.com",
+            name="Head Chef",
+            phone="+91-7777777777",
+            roles='["kitchen"]',
+            hashed_password=get_password_hash("demo123"),
+        )
+        db.add(chef)
+        db.commit()
 
 def seed():
     Base.metadata.create_all(bind=engine)
     migrate()
     db = SessionLocal()
-    if db.query(models.User).filter(models.User.email == "owner@demo.com").first():
-        print("Demo users exist, skipping")
-    else:
+    owner = db.query(models.User).filter(models.User.email == "owner@demo.com").first()
+    if not owner:
         owner = models.User(
             email="owner@demo.com",
             name="Demo Owner",
             phone="+91-9999999999",
-            role=models.UserRole.owner,
+            roles='["super_admin", "admin"]',
             hashed_password=get_password_hash("demo123"),
         )
         customer = models.User(
             email="customer@demo.com",
             name="Demo Customer",
-            role=models.UserRole.customer,
+            roles='["customer"]',
             hashed_password=get_password_hash("demo123"),
         )
         db.add_all([owner, customer])
@@ -73,6 +133,7 @@ def seed():
         db.commit()
         print("Seeded demo restaurant with owner@demo.com / customer@demo.com (password: demo123)")
 
+    ensure_roles_and_accounts(db)
     seed_spice_route(db)
     db.close()
 

@@ -29,9 +29,48 @@ def user_roles(user: models.User) -> set:
         return {"customer"}
 
 
+def is_super_admin(user: models.User) -> bool:
+    return "super_admin" in user_roles(user)
+
+
+def is_admin(user: models.User) -> bool:
+    """True if user has admin or super_admin role (super_admin inherits admin)."""
+    return bool(user_roles(user) & {"admin", "super_admin"})
+
+
+def is_kitchen(user: models.User) -> bool:
+    return "kitchen" in user_roles(user)
+
+
 def require_role(*roles: str):
     async def checker(user: models.User = Depends(get_current_user)):
-        if not user_roles(user) & set(roles):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+        roles_set = set(roles)
+        u_roles = user_roles(user)
+        # super_admin inherits admin privileges
+        if "admin" in roles_set and "super_admin" in u_roles:
+            return user
+        if not u_roles & roles_set:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions",
+            )
         return user
     return checker
+
+
+async def require_super_admin(user: models.User = Depends(get_current_user)) -> models.User:
+    if not is_super_admin(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super Admin access required.",
+        )
+    return user
+
+
+async def require_admin(user: models.User = Depends(get_current_user)) -> models.User:
+    if not is_admin(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+    return user

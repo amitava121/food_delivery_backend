@@ -3,7 +3,13 @@ venv/
 __pycache__/
 *.pyc
 *.db
+*.sqlite
+*.sqlite3
 *.log
 .DS_Store
 .wrangler/
 .pytest_cache/
+msedgedriver.exe
+chromedriver.exe
+.vscode/
+.idea/
